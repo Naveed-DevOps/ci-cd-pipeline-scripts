@@ -1,7 +1,4 @@
  # FOR SINGLE JOB PIPELINE: 
-
- 
-
 name: Python application 
 
 on: 
