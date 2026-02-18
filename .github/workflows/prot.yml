@@ -1,0 +1,210 @@
+name: Deploy FastAPI App  
+
+on: 
+
+  push: 
+
+    branches: 
+
+      - master  
+
+jobs: 
+
+  deploy: 
+
+    runs-on: self-hosted # Self-hosted GitHub runner 
+
+    steps: 
+
+      - name: Checkout Code 
+
+        uses: actions/checkout@v4 
+
+  
+
+      - name: Build Docker Image 
+
+        run: | 
+
+          echo "Building latest Docker image..." 
+          REPO_NAME=${{ github.repository }}
+          sudo docker build -t ${{ github.repository }}-image . 
+
+      - name: Stop & Remove Existing Container 
+
+        run: | 
+
+          CONTAINER_ID=$(sudo docker ps -aq --filter "name=${{ github.repository }}-container") 
+
+          if [ ! -z "$CONTAINER_ID" ]; then 
+
+            sudo docker stop  ${{ github.repository }}-backend-container 
+
+            sudo docker rm  ${{ github.repository }}-container 
+
+          fi 
+
+      - name: Run New Container from Latest Image 
+
+        run: | 
+
+          echo "Running container from latest image..." 
+          sudo docker run -d --name ${{ github.repository }}-container -p 3001:3001 ${{ github.repository }}-image 
+
+      - name: Cleanup Unused Docker Images 
+
+        run: | 
+
+          echo "Cleaning up old Docker images..." 
+
+          sudo docker image prune -af 
+
+  
+
+  nginx: 
+
+    runs-on:  self-hosted 
+
+    needs: deploy 
+
+    steps: 
+
+      - name: Test and Reload Nginx 
+
+        run: | 
+
+          echo "Testing nginx configuration..." 
+
+          sudo nginx -t && sudo systemctl restart nginx 
+
+   
+
+  notify: 
+
+    runs-on: ubuntu-latest 
+
+    needs: [deploy, nginx] 
+
+    if: always() 
+
+    steps: 
+
+      - name: Send Microsoft Teams Notification 
+
+        run: | 
+
+          TIME="$(TZ=Asia/Karachi date '+%Y-%m-%d %I:%M:%S %p')" 
+
+          # DEFAULT (both jobs successful) 
+
+            STATUS="success" 
+
+            COLOR="28a745" 
+
+            TITLE=" Deployment Successful" 
+
+            MESSAGE="Application successfully deployed and Nginx restarted." 
+
+  
+
+            # If DEPLOY job failed 
+
+            if [[ "${{ needs.deploy.result }}" != "success" ]]; then 
+
+            STATUS="failure" 
+
+            COLOR="dc3545" 
+
+            TITLE=" DEPLOYMENT FAILED – ACTION REQUIRED" 
+
+            MESSAGE="Deployment job failed. Please investigate immediately." 
+
+  
+
+            # If NGINX job failed 
+
+            elif [[ "${{ needs.nginx.result }}" != "success" ]]; then 
+
+            STATUS="failure" 
+
+            COLOR="dc3545" 
+
+            TITLE=" NGINX FAILED – ACTION REQUIRED" 
+
+            MESSAGE="Nginx restart failed. Please investigate immediately." 
+
+            fi 
+
+  
+
+            curl -H "Content-Type: application/json" -d "{ 
+
+            \"@type\": \"MessageCard\", 
+
+            \"@context\": \"http://schema.org/extensions\", 
+
+            \"summary\": \"CI/CD Notification\", 
+
+            \"themeColor\": \"$COLOR\", 
+
+            \"title\": \"$TITLE\", 
+
+            \"sections\": [{ 
+
+              \"facts\": [ 
+
+                {\"name\": \"Project\", \"value\": \"${{ github.repository }}\"}, 
+
+                {\"name\": \"Status\", \"value\": \"$STATUS\"}, 
+
+                {\"name\": \"Branch\", \"value\": \"${{ github.ref_name }}\"}, 
+
+                {\"name\": \"Triggered By\", \"value\": \"${{ github.actor }}\"}, 
+
+                {\"name\": \"Commit\", \"value\": \"${{ github.sha }}\"}, 
+
+                {\"name\": \"Time\", \"value\": \"$TIME\"} 
+
+              ], 
+
+              \"text\": \"$MESSAGE\" 
+
+            }], 
+
+            \"potentialAction\": [ 
+
+              { 
+
+                \"@type\": \"OpenUri\", 
+
+                \"name\": \"View Workflow Run\", 
+
+                \"targets\": [{ 
+
+                  \"os\": \"default\", 
+
+                  \"uri\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\" 
+
+                }] 
+
+              }, 
+
+              { 
+
+                \"@type\": \"OpenUri\", 
+
+                \"name\": \"View Commit Changes\", 
+
+                \"targets\": [{ 
+
+                  \"os\": \"default\", 
+
+                  \"uri\": \"${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}\" 
+
+                }] 
+
+              } 
+
+            ] 
+
+            }" ${{ secrets.MS_TEAMS_WEBHOOK_URI }} 
