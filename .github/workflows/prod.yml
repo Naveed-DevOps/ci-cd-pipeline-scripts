@@ -27,20 +27,20 @@ jobs:
         run: | 
 
           echo "Building latest Docker image..." 
-          REPO_NAME=${{ github.repository }}
-          sudo docker build -t ${{ github.repository }}-image . 
+
+          sudo docker build -t resume-tailoring-image . 
 
       - name: Stop & Remove Existing Container 
 
         run: | 
 
-          CONTAINER_ID=$(sudo docker ps -aq --filter "name=${{ github.repository }}-container") 
+          CONTAINER_ID=$(sudo docker ps -aq --filter "name=resume-tailoring-backend-container") 
 
           if [ ! -z "$CONTAINER_ID" ]; then 
 
-            sudo docker stop  ${{ github.repository }}-backend-container 
+            sudo docker stop  resume-tailoring-backend-container 
 
-            sudo docker rm  ${{ github.repository }}-container 
+            sudo docker rm  resume-tailoring-backend-container 
 
           fi 
 
@@ -49,7 +49,8 @@ jobs:
         run: | 
 
           echo "Running container from latest image..." 
-          sudo docker run -d --name ${{ github.repository }}-container -p 3001:3001 ${{ github.repository }}-image 
+
+          sudo docker run -d --name resume-tailoring-backend-container -p 3001:3001 resume-tailoring-image 
 
       - name: Cleanup Unused Docker Images 
 
